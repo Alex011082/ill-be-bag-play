@@ -1,220 +1,550 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
-		<title>I'LL BE BAG</title>
-		<style>
-html, body, #canvas {
-	margin: 0;
-	padding: 0;
-	border: 0;
-}
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, viewport-fit=cover">
+	<title>I'LL BE BAG</title>
+	<link rel="preload" as="image" href="loading_hero.jpg">
+	<!--
+	CUSTOM HTML SHELL — I'LL BE BAG.  OWNER: perf-and-platform.
 
-body {
-	color: white;
-	background-color: black;
-	overflow: hidden;
-	touch-action: none;
-}
+	Selected by html/custom_html_shell in export_presets.cfg; the exporter substitutes
+	I'LL BE BAG, <link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+, index.js, {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":1471592,"index.wasm":39513091},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4} and
+	false and writes the result as build/web/index.html.  The stock
+	shell's index.png / #242424 / show-image--true fullsize--true use-filter--true tokens are
+	DELIBERATELY ABSENT: they drive the Godot-logo-on-#242424 splash this file replaces.
+	Unreferenced tokens are simply never substituted — verified by diffing the exported
+	index.html against this file.
 
-#canvas {
-	display: block;
-}
+	WHY IT EXISTS.  MEASURED 2026-08-10 against the published build
+	(https://alex011082.github.io/ill-be-bag-play/): index.wasm is 39,513,091 bytes
+	uncompressed, GitHub Pages ships it `content-encoding: gzip` at 10,248,573 bytes, and
+	measured throughput was 3.1 MB/s — so the DOWNLOAD is 3-4 s.  The owner still watched
+	a black rectangle for about a minute inside a 367x654 iframe on his Base44 site and
+	read it as broken.  The minute is wasm compilation plus engine init, not bandwidth,
+	and no amount of compression touches it.  What was actually broken was the REPORTING:
+	the stock shell paints the Godot logo on #242424, which at 367 px wide is
+	indistinguishable from a dead frame, and its bare <progress> element says nothing
+	about the second, longer phase.  So this shell paints the game's own poster before any
+	wasm work starts, reports the download from REAL bytes, and names the compile phase
+	out loud so a waiting player knows there is a second act.
 
-#canvas:focus {
-	outline: none;
-}
+	NOTHING HERE MAY LIE.  The percentage is driven only by Preloader.animateProgress's
+	(loaded, total) pair.  When total is unknown the bar goes indeterminate and the
+	percentage disappears rather than being invented.  In the compile phase — where no
+	progress information exists at all — the bar holds at a FULL 100% (true: the download
+	really did finish) and pulses, and the percentage is replaced by a sentence; it never
+	invents a fraction of the engine work.  A bar creeping toward 100% on made-up data is
+	the one thing this file must never do.
 
-#status, #status-splash, #status-progress {
-	position: absolute;
-	left: 0;
-	right: 0;
-}
+	THE ARTWORK is the owner's: web/shell/loading_hero.jpg, 977x1737 (aspect 0.5625).
+	Its layout drives every number in the CSS below, and all of them were MEASURED off
+	the file rather than eyeballed (see the per-rule comments).  The progress treatment —
+	uppercase label, white rounded bar at ~64% width, percentage underneath — is copied
+	from the author's own loading mockup, references/mockups/loading_life.jpg, so this is
+	his design rendered honestly and not a new one.
 
-#status, #status-splash {
-	top: 0;
-	bottom: 0;
-}
+	ODbL.  "Map data (c) OpenStreetMap contributors" is a licence condition of the baked
+	Allenby district (data/district_allenby.json, tools/bake_district.py) and this page is
+	the game's own page.  Do not remove #boot-legal.  NOTE for whoever audits this: before
+	this shell existed the published index.html carried NO attribution at all — the line
+	lived only in the build repo's README.md.
+	-->
+	<style>
+	html, body, #canvas {
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
 
-#status {
-	background-color: #242424;
-	display: flex;
-	flex-direction: column;
-	justify-content: center;
-	align-items: center;
-	visibility: hidden;
-}
+	body {
+		/* NOT black.  The old shell's black is the whole bug report: a black rectangle in
+		   a small iframe reads as a failed embed.  #10131A is the game's own HUD card ink
+		   — sampled (23,25,30) from shots/evidence/boot_default.png and dropped a hair. */
+		background-color: #10131A;
+		color: #FFFFFF;
+		overflow: hidden;
+		touch-action: none;
+		font-family: 'Helvetica Neue', Helvetica, Arial, 'Noto Sans', sans-serif;
+		-webkit-font-smoothing: antialiased;
+	}
 
-#status-splash {
-	max-height: 100%;
-	max-width: 100%;
-	margin: auto;
-}
+	#canvas {
+		display: block;
+	}
 
-#status-splash.show-image--false {
-	display: none;
-}
+	#canvas:focus {
+		outline: none;
+	}
 
-#status-splash.fullsize--true {
-	height: 100%;
-	width: 100%;
-	object-fit: contain;
-}
+	/* ---- the boot screen ------------------------------------------------ */
 
-#status-splash.use-filter--false {
-	image-rendering: pixelated;
-}
+	#boot {
+		position: fixed;
+		inset: 0;
+		z-index: 10;
+		background-color: #10131A;
+		overflow: hidden;
+		opacity: 1;
+		/* 450 ms.  engine.startGame()'s promise resolves at callMain, and the first GAME
+		   frame lands after that — the scene still has to build and the compatibility
+		   renderer still has to compile its shaders.  A hard remove() at resolve (what
+		   the stock shell does) therefore punches a hole between poster and first frame.
+		   A fade long enough to cover the gap hides it. */
+		transition: opacity 450ms ease-out;
+	}
 
-#status-progress, #status-notice {
-	display: none;
-}
+	#boot.boot--gone {
+		opacity: 0;
+		pointer-events: none;
+	}
 
-#status-progress {
-	bottom: 10%;
-	width: 50%;
-	margin: 0 auto;
-}
+	/* LQIP-BEGIN — generated by tools/make_lqip.py from loading_hero.jpg (977x1737 -> 24x43).
+	   Do not hand-edit; rerun the tool when the artwork changes. */
+	:root { --boot-lqip: url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABQODxIPDRQSEBIXFRQYHjIhHhwcHj0sLiQySUBMS0dARkVQWnNiUFVtVkVGZIhlbXd7gYKBTmCNl4x9lnN+gXz/2wBDARUXFx4aHjshITt8U0ZTfHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHz/wAARCAArABgDASIAAhEBAxEB/8QAGgAAAgMBAQAAAAAAAAAAAAAAAAUBAwQCBv/EACUQAAICAgIBBAIDAAAAAAAAAAECAxEABBIhMQUTIkEyQlGhsf/EABcBAAMBAAAAAAAAAAAAAAAAAAECAwT/xAAcEQACAgMBAQAAAAAAAAAAAAAAAQIREiExQWH/2gAMAwEAAhEDEQA/AM+rB7slcGYAE0M1tpwFC1OE6UFRfy+xl/pzCCGVpGAXkOia8f7lzbcUMYVkeqDKxPZJuz/ebHJ3ozJKtiGfWfXlCSAA9GrvDGTGLa2Q3DjEigAVVnDFbXoV8NO7rx0Jk/Hy/fjKmEG5w9qZDKBxKXk+oHgg42UPnF0Gnr7Oz7hldZPHG6GRc3GiignYz2NU68Sx8QWZgRXnrzhlelqbOu/GaczMOhf0MMdTdbEcVZK7ytKRJ+NUR5F5yV0y4kFxkG+vvFsHyRmbs5w7H2lN/tWZ8r6Xxrg2PqUQdiaqur/nDPN7BIdQD+2GFyYMUf/Z); }
+	/* LQIP-END */
 
-#status-notice {
-	background-color: #5b3943;
-	border-radius: 0.5rem;
-	border: 1px solid #9b3943;
-	color: #e0e0e0;
-	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
-	line-height: 1.3;
-	margin: 0 2rem;
-	overflow: hidden;
-	padding: 1rem;
-	text-align: center;
-	z-index: 1;
-}
-		</style>
-		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+	/* THE STAGE is sized to the poster's exact aspect rather than letting the <img> fit
+	   itself, and that is the whole trick that makes the progress sit ON the artwork.
+	   With object-fit:contain the rendered picture is letterboxed inside the element, so
+	   an overlay pinned to the CONTAINER's bottom is pinned to the bar, not to the
+	   skyline.  Giving the stage the picture's aspect makes container bottom == picture
+	   bottom at every viewport, and every percentage below is then a percentage of the
+	   artwork itself.
+	   977/1737 is the file's real pixel size, not a rounded 9:16. */
+	#boot-stage {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		width: min(100vw, calc(100vh * 977 / 1737));
+		height: min(100vh, calc(100vw * 1737 / 977));
+		/* The inline placeholder (tools/make_lqip.py) — the same poster at 24 px wide,
+		   carried inside this HTML so the first painted frame is already the artwork and
+		   not a flat colour waiting on a 280 KB request.  See that tool's header for the
+		   measurement that made it necessary. */
+		background-image: var(--boot-lqip);
+		background-size: 100% 100%;
+		background-repeat: no-repeat;
+	}
+
+	/* dvh where it exists: on a full iOS Safari tab, 100vh is the LARGE viewport, so the
+	   poster is taller than what is visible and the progress block — which lives in the
+	   bottom 12% — is the first thing to fall behind the toolbar. */
+	@supports (height: 100dvh) {
+		#boot-stage {
+			width: min(100vw, calc(100dvh * 977 / 1737));
+			height: min(100dvh, calc(100vw * 1737 / 977));
+		}
+	}
+
+	#boot-art {
+		display: block;
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+	}
+
+	/* WIDE / DESKTOP.  The owner asked for full screen on desktop, and a 9:16 poster in a
+	   16:9 window cannot be both full-bleed and whole.  MEASURED 2026-08-10: at 1280x720
+	   a true `object-fit: cover` scales the poster by 1.310 to 1280x2276, so 31.6% of the
+	   artwork is visible; at 2560x1080 the scale is 2.620 and 23.7% is visible.  The
+	   wordmark occupies the top 4-37%, the bag 32-86% and the skyline 80-100%, so no
+	   object-position keeps even two of the three named elements in frame — and the
+	   skyline band, the only region the progress is allowed to sit on, is off-screen in
+	   every one of them.  So the screen is filled by a blurred, darkened copy of the
+	   poster and the poster itself stays whole and full-height on top of it.  Full
+	   screen, intact artwork, progress still on the skyline. */
+	#boot-backdrop {
+		position: absolute;
+		left: -6%;
+		top: -6%;
+		width: 112%;
+		height: 112%;
+		object-fit: cover;
+		filter: blur(44px) saturate(0.7) brightness(0.4);
+	}
+
+	/* The scrim.  Height MEASURED against the artwork, not chosen: scanning
+	   loading_hero.jpg for near-white horizontal runs, the bag's lowest substantial run
+	   is at row 1485 of 1737 (85.5%) and collapses to noise (7 px) from row 1490 on, so
+	   the bag ends at ~85.7%.  A 15%-tall gradient therefore starts at 85% and is still
+	   at ~4% opacity where the bag ends — it darkens the city and never the bag.  The
+	   city needs it: mean row luma runs 146 at 86.6% down to 76 at 99.6%, bright enough
+	   at the top of the band that white type would fray without it. */
+	#boot-scrim {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 15%;
+		background: linear-gradient(to top, rgba(8,10,14,0.86) 0%, rgba(8,10,14,0.62) 45%, rgba(8,10,14,0) 100%);
+		pointer-events: none;
+	}
+
+	/* The progress block, bottom-anchored INSIDE the stage.  Bottom-anchored rather than
+	   pinned to a fixed top so it cannot grow upward into the bag on a small embed: at
+	   the owner's 367x654 the stage is 367x652 and the block's top edge lands at ~89% of
+	   the artwork; on a 400 px-tall stage the px floors in the clamps below hold the
+	   content at ~50 px and the top edge lands at ~86%, which is still under the bag. */
+	#boot-foot {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 1.6%;
+		text-align: center;
+		padding: 0 6%;
+	}
+
+	/* Label, bar and percentage all follow references/mockups/loading_life.jpg, the
+	   author's own loading screen: uppercase letter-spaced label above a white rounded
+	   bar, percentage centred underneath.  MEASURED off that mockup — poster content
+	   spans rows 26..1256 and columns 0..602; the bar sits at row 1164 (92.5% of the
+	   poster's height) and its track runs 369 px wide (61% of the poster's width). */
+	#boot-phase {
+		font-size: clamp(11px, 3.1vmin, 17px);
+		letter-spacing: 0.10em;
+		text-transform: uppercase;
+		font-weight: 500;
+		text-shadow: 0 2px 6px rgba(0,0,0,0.7);
+		min-height: 1.25em;
+	}
+
+	#boot-track {
+		position: relative;
+		height: clamp(4px, 0.75vmin, 7px);
+		width: 64%;
+		max-width: 520px;
+		margin: clamp(6px, 1.4vmin, 14px) auto clamp(5px, 1.1vmin, 11px);
+		border-radius: 99px;
+		background: rgba(255,255,255,0.30);
+		box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+		overflow: hidden;
+	}
+
+	#boot-fill {
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 0%;
+		border-radius: 99px;
+		background: #FFFFFF;
+		transition: width 180ms linear;
+	}
+
+	/* INDETERMINATE — a sliding segment, used when the engine reports total == 0, i.e.
+	   when the byte count genuinely is not known.  It slides; it does not fill.  A bar
+	   that fills without knowing the total is the lie this file exists to avoid. */
+	#boot-track.boot--unknown #boot-fill {
+		width: 30%;
+		transition: none;
+		animation: boot-slide 1.5s ease-in-out infinite;
+	}
+
+	@keyframes boot-slide {
+		0%   { transform: translateX(-105%); }
+		100% { transform: translateX(340%); }
+	}
+
+	/* THE COMPILE PHASE keeps the bar FULL and pulses it.  Full is not a lie here and the
+	   distinction matters: the download really has finished, and that is the only thing
+	   the bar has ever claimed.  What is unknown is the engine work that follows, and a
+	   pulse carries "still working" without asserting any fraction of it.  Draining the
+	   bar back to a sliding segment was the first draft and it read as going backwards —
+	   the player had just watched it fill. */
+	#boot-track.boot--working #boot-fill {
+		width: 100%;
+		animation: boot-pulse 1.25s ease-in-out infinite;
+	}
+
+	@keyframes boot-pulse {
+		0%, 100% { opacity: 1; }
+		50%      { opacity: 0.42; }
+	}
+
+	#boot-sub {
+		font-size: clamp(10px, 2.5vmin, 15px);
+		font-weight: 500;
+		letter-spacing: 0.02em;
+		text-shadow: 0 2px 6px rgba(0,0,0,0.7);
+		min-height: 1.3em;
+		line-height: 1.3;
+	}
+
+	/* ODbL attribution — a licence condition, not decoration.  It lives on the boot
+	   screen because the boot screen is the only page this build has. */
+	#boot-legal {
+		margin-top: clamp(4px, 1vmin, 10px);
+		font-size: clamp(8px, 1.75vmin, 11px);
+		color: rgba(255,255,255,0.55);
+		text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+	}
+
+	#boot-legal a {
+		color: inherit;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+
+	/* ---- failure ------------------------------------------------------- */
+
+	#boot-notice {
+		display: none;
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		width: min(84%, 460px);
+		background-color: #5b3943;
+		border: 1px solid #9b3943;
+		border-radius: 8px;
+		color: #e0e0e0;
+		font-size: clamp(11px, 2.6vmin, 14px);
+		line-height: 1.35;
+		padding: 14px;
+		text-align: center;
+		z-index: 3;
+	}
+
+	#boot.boot--failed #boot-track,
+	#boot.boot--failed #boot-phase,
+	#boot.boot--failed #boot-sub,
+	#boot.boot--failed #boot-legal { visibility: hidden; }
+
+	#boot.boot--failed #boot-notice { display: block; }
+
+	@media (prefers-reduced-motion: reduce) {
+		#boot-track.boot--unknown #boot-fill { animation-duration: 4s; }
+		#boot { transition: none; }
+	}
+	</style>
+	<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 
-	</head>
-	<body>
-		<canvas id="canvas">
-			Your browser does not support the canvas tag.
-		</canvas>
+</head>
+<body>
+	<canvas id="canvas">
+		Your browser does not support the canvas tag.
+	</canvas>
 
-		<noscript>
-			Your browser does not support JavaScript.
-		</noscript>
+	<noscript>
+		Your browser does not support JavaScript.
+	</noscript>
 
-		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
-			<progress id="status-progress"></progress>
-			<div id="status-notice"></div>
+	<div id="boot">
+		<img id="boot-backdrop" src="loading_hero.jpg" alt="" aria-hidden="true" decoding="async">
+		<div id="boot-stage">
+			<img id="boot-art" src="loading_hero.jpg" alt="I'll Be Bag" decoding="async" fetchpriority="high">
+			<div id="boot-scrim"></div>
+			<div id="boot-foot">
+				<div id="boot-phase" role="status" aria-live="polite">Loading life&#8230;</div>
+				<div id="boot-track"><div id="boot-fill"></div></div>
+				<div id="boot-sub"></div>
+				<div id="boot-legal">Map data &#169; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors (ODbL)</div>
+			</div>
 		</div>
+		<div id="boot-notice"></div>
+	</div>
 
-		<script src="index.js"></script>
-		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":1495700,"index.wasm":39513091},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+	<script src="index.js"></script>
+	<script>
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":1471592,"index.wasm":39513091},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
 (function () {
-	const statusOverlay = document.getElementById('status');
-	const statusProgress = document.getElementById('status-progress');
-	const statusNotice = document.getElementById('status-notice');
+	const boot = document.getElementById('boot');
+	const track = document.getElementById('boot-track');
+	const fill = document.getElementById('boot-fill');
+	const phase = document.getElementById('boot-phase');
+	const sub = document.getElementById('boot-sub');
+	const notice = document.getElementById('boot-notice');
 
-	let initializing = true;
-	let statusMode = '';
+	// 9000 ms.  The compile phase has NO progress signal — Preloader stops calling back
+	// the moment the last byte lands, and everything after that (WebAssembly compilation
+	// finishing, module init, pck copy, callMain, scene build, shader compile) is opaque
+	// to this page.  MEASURED 2026-08-10: the download finishes in 3-4 s while the wait
+	// the owner reported ran to about a minute, so the silence after the bar fills is the
+	// majority of the wait.  This timer estimates nothing; it adds one sentence saying
+	// WHY the silence is long, once the silence is long enough to be alarming.  Below
+	// ~6 s the sentence flashes past on a fast machine and itself reads as a glitch.
+	var COMPILE_HINT_MS = 9000;
 
-	function setStatusMode(mode) {
-		if (statusMode === mode || !initializing) {
+	var state = 'download';
+	var hintTimer = null;
+	var sawBytes = false;
+
+	function enterCompiling() {
+		if (state !== 'download') {
 			return;
 		}
-		if (mode === 'hidden') {
-			statusOverlay.remove();
-			initializing = false;
-			return;
-		}
-		statusOverlay.style.visibility = 'visible';
-		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
-		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
-		statusMode = mode;
+		state = 'compiling';
+		// The bar stays — it is the author's composition — full and pulsing, because the
+		// download really is complete and what follows is not measurable.
+		track.classList.remove('boot--unknown');
+		track.classList.add('boot--working');
+		fill.style.width = '100%';
+		phase.textContent = 'Starting the engine…';
+		sub.textContent = 'Unpacking the city';
+		hintTimer = window.setTimeout(function () {
+			// Honest and specific: name the real work and the real number.  39,513,091
+			// bytes of engine binary is what index.wasm actually is — GODOT_CONFIG's own
+			// fileSizes carries it — and the browser really is compiling it.
+			sub.textContent = 'First run compiles about 40 MB of engine code. This is the slow part.';
+		}, COMPILE_HINT_MS);
 	}
 
-	function setStatusNotice(text) {
-		while (statusNotice.lastChild) {
-			statusNotice.removeChild(statusNotice.lastChild);
+	function finish() {
+		if (state === 'done') {
+			return;
 		}
-		const lines = text.split('\n');
-		lines.forEach((line) => {
-			statusNotice.appendChild(document.createTextNode(line));
-			statusNotice.appendChild(document.createElement('br'));
-		});
+		state = 'done';
+		if (hintTimer !== null) {
+			window.clearTimeout(hintTimer);
+		}
+		boot.classList.add('boot--gone');
+		// Matches the 450 ms CSS transition; the node is removed rather than left
+		// invisible so it can never eat a touch aimed at the shape pad.
+		window.setTimeout(function () {
+			if (boot.parentNode) {
+				boot.parentNode.removeChild(boot);
+			}
+		}, 520);
 	}
 
 	function displayFailureNotice(err) {
 		console.error(err);
+		var msg;
 		if (err instanceof Error) {
-			setStatusNotice(err.message);
+			msg = err.message;
 		} else if (typeof err === 'string') {
-			setStatusNotice(err);
+			msg = err;
 		} else {
-			setStatusNotice('An unknown error occurred.');
+			msg = 'An unknown error occurred.';
 		}
-		setStatusMode('notice');
-		initializing = false;
+		if (hintTimer !== null) {
+			window.clearTimeout(hintTimer);
+		}
+		state = 'failed';
+		while (notice.lastChild) {
+			notice.removeChild(notice.lastChild);
+		}
+		msg.split('\n').forEach(function (line) {
+			notice.appendChild(document.createTextNode(line));
+			notice.appendChild(document.createElement('br'));
+		});
+		boot.classList.add('boot--failed');
 	}
 
-	const missing = Engine.getMissingFeatures({
+	// The ONLY source of progress truth in this file.
+	//
+	// Preloader.animateProgress (godot.js) sums, over index.wasm and index.pck:
+	//   loaded += bytes actually handed to the stream reader
+	//   total  += GODOT_CONFIG.fileSizes[file], collapsing to 0 if ANY size is unknown.
+	// Both files are registered in the same tick by startGame's Promise.all, so `total`
+	// is 41,008,791 from the very first callback and never jumps mid-download.
+	//
+	// The bytes are UNCOMPRESSED on both sides: `total` is the export-time file size and
+	// `loaded` counts post-gunzip bytes off the reader, so loaded/total is an honest
+	// fraction even though the wire carries 10.2 MB of gzip.  That is also why this shows
+	// a percentage and NOT a megabyte figure — "12 of 39 MB" would be true of the decoded
+	// stream and a lie about the download, and the wire bytes are not visible from here.
+	function onProgress(current, total) {
+		if (state !== 'download') {
+			return;
+		}
+		if (total > 0 && current >= 0 && current <= total) {
+			sawBytes = true;
+			track.classList.remove('boot--unknown');
+			var frac = current / total;
+			fill.style.width = (frac * 100).toFixed(1) + '%';
+			phase.textContent = 'Loading life…';
+			sub.textContent = Math.floor(frac * 100) + '%';
+			if (current >= total) {
+				enterCompiling();
+			}
+		} else {
+			// Total unknown, or bytes past total (which cannot happen with the fileSizes
+			// this export writes, but if a future export loses them the honest answer is
+			// to stop claiming a number — not to clamp at 100% and pretend).
+			track.classList.add('boot--unknown');
+			phase.textContent = 'Loading life…';
+			sub.textContent = 'Downloading';
+		}
+	}
+
+	// THE SECOND, INDEPENDENT PHASE-2 TRIGGER, and it is not belt-and-braces — the
+	// progress callback alone provably does not do the job.
+	//
+	// MEASURED 2026-08-10, throttled local run at 800 KB/s, tab visible: the last
+	// onProgress this page received said 95%, and the next thing that happened was the
+	// game starting.  "Starting the engine…" never rendered once.  Preloader.animateProgress
+	// is driven by requestAnimationFrame, so the tick that would have reported 100% was
+	// still queued behind the WebAssembly compilation that had already begun.
+	// MEASURED in the same session, tab hidden: onProgress fired ZERO times across a
+	// complete 48.7 s download, because rAF does not run in a hidden tab at all
+	// (docs/GODOT_FACTS.md already records the hidden-tab rAF trap for the game loop; it
+	// applies to the loader too).  An embedded iframe that starts off-screen is exactly
+	// that case.
+	//
+	// Resource Timing is the honest answer: responseEnd for a same-origin resource is the
+	// moment its last byte arrived, it is recorded by the browser rather than by a
+	// callback we have to be scheduled to receive, and it keeps working while rAF is
+	// suspended.  The files to wait for are read from GODOT_CONFIG.fileSizes rather than
+	// hardcoded, so this follows a renamed export automatically.
+	var awaiting = Object.keys(GODOT_CONFIG['fileSizes'] || {});
+
+	function noteDownloaded(url) {
+		var name = String(url).split('?')[0].split('/').pop();
+		var i = awaiting.indexOf(name);
+		if (i < 0) {
+			return;
+		}
+		awaiting.splice(i, 1);
+		if (awaiting.length === 0) {
+			enterCompiling();
+		}
+	}
+
+	if (awaiting.length > 0 && typeof PerformanceObserver === 'function') {
+		try {
+			new PerformanceObserver(function (list) {
+				list.getEntries().forEach(function (entry) {
+					noteDownloaded(entry.name);
+				});
+			}).observe({ type: 'resource', buffered: true });
+		} catch (err) {
+			// Old browser, or no 'resource' entry type. The progress callback below is
+			// still wired; we simply lose the second trigger. Never fatal.
+			console.warn('boot: resource timing unavailable', err);
+		}
+	}
+
+	var missing = Engine.getMissingFeatures({
 		threads: GODOT_THREADS_ENABLED,
 	});
 
 	if (missing.length !== 0) {
-		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
-			let serviceWorkerRegistrationPromise;
-			try {
-				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
-			} catch (err) {
-				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
-			}
-			// There's a chance that installing the service worker would fix the issue
-			Promise.race([
-				serviceWorkerRegistrationPromise.then((registration) => {
-					if (registration != null) {
-						return Promise.reject(new Error('Service worker already exists.'));
-					}
-					return registration;
-				}).then(() => engine.installServiceWorker()),
-				// For some reason, `getRegistration()` can stall
-				new Promise((resolve) => {
-					setTimeout(() => resolve(), 2000);
-				}),
-			]).then(() => {
-				// Reload if there was no error.
-				window.location.reload();
-			}).catch((err) => {
-				console.error('Error while registering service worker:', err);
-			});
-		} else {
-			// Display the message as usual
-			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
-			displayFailureNotice(missingMsg + missing.join('\n'));
-		}
+		displayFailureNotice('Error\nThe following features required to run Godot projects on the Web are missing:\n' + missing.join('\n'));
 	} else {
-		setStatusMode('progress');
+		phase.textContent = 'Loading life…';
+		sub.textContent = '0%';
 		engine.startGame({
-			'onProgress': function (current, total) {
-				if (current > 0 && total > 0) {
-					statusProgress.value = current;
-					statusProgress.max = total;
-				} else {
-					statusProgress.removeAttribute('value');
-					statusProgress.removeAttribute('max');
-				}
-			},
-		}).then(() => {
-			setStatusMode('hidden');
+			'onProgress': onProgress,
+		}).then(function () {
+			// Belt and braces: a fully cached load can resolve before the first rAF, so
+			// onProgress may never fire.  Land on the finished state either way.
+			if (!sawBytes) {
+				enterCompiling();
+			}
+			finish();
 		}, displayFailureNotice);
 	}
 }());
-		</script>
-	</body>
+	</script>
+</body>
 </html>
 
