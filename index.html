@@ -11,7 +11,7 @@
 	Selected by html/custom_html_shell in export_presets.cfg; the exporter substitutes
 	I'LL BE BAG, <link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
-, index.js, {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":1525744,"index.wasm":39513091},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4} and
+, index.js, {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":9633016,"index.wasm":39513091},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4} and
 	false and writes the result as build/web/index.html.  The stock
 	shell's index.png / #242424 / show-image--true fullsize--true use-filter--true tokens are
 	DELIBERATELY ABSENT: they drive the Godot-logo-on-#242424 splash this file replaces.
@@ -349,9 +349,88 @@
 		<div id="boot-notice"></div>
 	</div>
 
+	<script>
+/* ============================================================================================
+   THE TILT BRIDGE, BECAUSE GODOT'S WEB EXPORT HAS NO SENSORS AT ALL.
+
+   MEASURED on this project's own 4.7.1 export, 2026-08-11 — the whole exported runtime, both
+   the JS glue and the wasm:
+
+       gyroscope 0 · accelerometer 0 · gravity 0 · orientation 0 · sensor 0
+       deviceorientation/devicemotion in index.wasm: 0
+
+   So `Input.get_gravity()` returns the zero vector forever in a browser. This is NOT the iOS
+   permission problem people expect; the sensor is simply not wired on this platform. The owner
+   chose tilt as the steering device, and the browser is the only build he has, so without this
+   file the control he picked would do exactly nothing and the game would ship claiming otherwise.
+
+   WHAT IT PUBLISHES: `window.__bag_tilt = {x, y, z, ok}` in m/s^2, device axes, the same shape and
+   the same units `Input.get_gravity()` would have returned. `game/input/player_input.gd` reads it
+   through JavaScriptBridge only when the engine's own sensor is unusable, so native builds are
+   untouched and this is a fallback rather than a fork.
+
+   SIGN, AND WHY A GLOBAL FLIP CANNOT HURT: TiltReader measures roll RELATIVE to a neutral it
+   captures from this same source, so if a platform reports both x and y inverted, the current
+   sample and the neutral invert together and the DELTA is unchanged. A mirror of x ALONE would
+   invert the steering, and `TiltReader.INVERT` is the one-line answer to that if the owner reports
+   leaning one way and going the other.
+
+   iOS 13+ NEEDS A GESTURE. `DeviceMotionEvent.requestPermission()` must be called from a real user
+   gesture or it rejects. The first touch on the page is that gesture; the listener removes itself
+   once permission has been answered either way, so a refusal is not re-asked on every tap.
+   ============================================================================================ */
+(function () {
+	window.__bag_tilt = { x: 0, y: 0, z: 0, ok: false };
+
+	function fromMotion(e) {
+		const g = e.accelerationIncludingGravity;
+		if (!g || g.x === null || g.y === null) return;
+		window.__bag_tilt = { x: g.x, y: g.y, z: g.z || 0, ok: true };
+	}
+
+	/* Fallback for browsers that fire orientation but not motion: rebuild a gravity vector from
+	   beta (front-back) and gamma (left-right). Same axes, same magnitude, so the consumer cannot
+	   tell which source it came from. */
+	function fromOrientation(e) {
+		if (e.beta === null || e.gamma === null) return;
+		if (window.__bag_tilt.ok) return;
+		const b = e.beta * Math.PI / 180, c = e.gamma * Math.PI / 180;
+		const G = 9.81;
+		window.__bag_tilt = {
+			x: G * Math.sin(c),
+			y: -G * Math.sin(b) * Math.cos(c),
+			z: G * Math.cos(b) * Math.cos(c),
+			ok: true,
+		};
+	}
+
+	function listen() {
+		window.addEventListener('devicemotion', fromMotion, { passive: true });
+		window.addEventListener('deviceorientation', fromOrientation, { passive: true });
+	}
+
+	const needsGesture = typeof DeviceMotionEvent !== 'undefined'
+		&& typeof DeviceMotionEvent.requestPermission === 'function';
+
+	if (!needsGesture) {
+		listen();
+	} else {
+		const ask = function () {
+			window.removeEventListener('touchend', ask);
+			window.removeEventListener('click', ask);
+			DeviceMotionEvent.requestPermission()
+				.then(function (state) { if (state === 'granted') listen(); })
+				.catch(function () { /* refused or unavailable: bank stays 0, which is honest */ });
+		};
+		window.addEventListener('touchend', ask, { passive: true });
+		window.addEventListener('click', ask);
+	}
+})();
+	</script>
+
 	<script src="index.js"></script>
 	<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":1525744,"index.wasm":39513091},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":9633016,"index.wasm":39513091},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
